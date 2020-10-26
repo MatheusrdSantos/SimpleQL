@@ -132,3 +132,12 @@ Here are the other parameters:
 See the details at [jsonwebtoken website](https://github.com/auth0/node-jsonwebtoken)
 
 Generated jwts will include an iat (issued at) claim by default unless noTimestamp is specified. If iat is inserted in the payload, it will be used instead of the real timestamp for calculating other things like exp given a timespan in options.expiresIn.
+
+## Authentication on another route
+
+To authenticate a user on a separated route, you can use the plugin middleware:
+
+```javascript
+
+
+```

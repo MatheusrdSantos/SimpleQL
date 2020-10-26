@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+
+// ts-check
 const crypto = require('crypto');
 const Testing = require('simple-ql-testing');
 

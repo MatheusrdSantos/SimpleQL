@@ -324,6 +324,7 @@ function webhookListener(stripe, webhookSecret, callbacks) {
       case 'payment_method.card_automatically_updated':
       case 'payment_method.detached':
       case 'payment_method.updated':
+      case 'checkout.session.completed':
       case 'plan.created':
       case 'plan.deleted':
       case 'plan.updated':

@@ -1,4 +1,10 @@
+// @ts-check
 
+/** @typedef { 'string' | 'integer' | 'boolean' | 'function' | 'float' | 'undefined' | 'null' |'*' } TypeValue */
+
+/** @typedef { TypeValue | Record<string, TypeValue | string[] | Record<string, TypeValue | string[] | boolean> | boolean> & { required?: string[]; strict?: boolean }} Model */
+
+/** @type Model */
 const dbColumn = {
   type : 'string',
   length: 'integer',
@@ -9,6 +15,7 @@ const dbColumn = {
   strict : true,
 };
 
+/** @type Model */
 const database = {
   user: 'string',
   password: 'string',
@@ -22,6 +29,7 @@ const database = {
   required : ['user', 'password', 'type', 'privateKey', 'host', 'database'],
 };
 
+/** @type Model */
 const login = {
   login: 'string',
   password: 'string',
@@ -52,15 +60,17 @@ const login = {
   strict : true,
 };
 
+/** @type Model */
 const security = {
   app: 'function',
   domains: ['string'],
   emailACME: 'string',
-  requestPerMinute: 'number',
+  requestPerMinute: 'integer',
   required: ['app', 'domains', 'emailACME'],
   strict: true,
 };
 
+/** @type Model */
 const stripe = {
   app: 'function',
   secretKey: 'string',
@@ -68,7 +78,7 @@ const stripe = {
   decimal: 'boolean',
   VAT: {
     country: 'string',
-    percentage: 'number',
+    percentage: 'float',
     required: ['country', 'percentage'],
     strict: true,
   },

@@ -1,3 +1,5 @@
+// @ts-check
+
 /** Login Plugin. Check the documentation **/
 const { BAD_REQUEST, NOT_FOUND, WRONG_PASSWORD } = require('../errors');
 const fs = require('fs');
@@ -7,17 +9,20 @@ const { login : loginModel , dbColumn } = require('../utils/types');
 const logger = require('../utils/logger');
 const { getOptionalDep } = require('../utils');
 
+/** @type {import('jsonwebtoken')} */
 const jwt = getOptionalDep('jsonwebtoken', 'LoginPlugin');
 
-let keyPair = {};
+/** @type {{ publicKey: string | Buffer; privateKey: string | Buffer }} */
+let keyPair;
 try {
   // try to read stored key
   keyPair = {
     publicKey: fs.readFileSync('public.pem'),
     privateKey: fs.readFileSync('private.key'),
   };
-} catch {
+} catch(e) {
   // generate Key
+  /** @type {import('crypto').KeyPairKeyObjectResult} **/
   keyPair = crypto.generateKeyPairSync('rsa', {
     modulusLength: 4096,
     publicKeyEncoding: {
@@ -33,30 +38,48 @@ try {
   fs.writeFileSync('private.key', keyPair.privateKey, { mode: 0o770 });
 }
 
-
 const { publicKey, privateKey } = keyPair;
-const algoJWT = 'RS256';
 
+/**
+ * Check the type of the data provided to the plugin
+ * @param {string} field The column name in the table 
+ * @param {import('../utils').FormattedTableValue} table The table object data
+ * @param {string} expectedType The expected type for this column
+ * @param {number} minSize The minimum size for this column
+ * @param {string} tableName The table name
+ * @throws Throws an error if the field type doesn't match the expected type
+ * @returns {true}
+ */
 function checkType(field, table, expectedType, minSize, tableName) {
   let data = table[field];
-  if(Object(data) instanceof String) {
-    const [type, l] = table[field].split('/');
-    data = { type, length : parseInt(l, 10) };
-  }
   if(!data || data.type!==expectedType) throw new Error(`${tableName} should contain a field ${field} of type ${expectedType}`);
   check(dbColumn, data);
-  if(!data.length || parseInt(data.length, 10)<minSize) throw new Error(`${data} in ${tableName} should have a length of a at least ${minSize}`);
+  if(!data.length || parseInt(data.length + '', 10)<minSize) throw new Error(`${data} in ${tableName} should have a length of a at least ${minSize}`);
   return true;
 }
 
+/**
+ * Ensure that the data is of type string
+ * @param {string} key The column to check
+ * @param {any} value The current value
+ * @param {string} table The table name
+ * @thorws Throws an error if the value is not of type string
+ */
 function isString(key, value, table) {
-  if(!(Object(value) instanceof String)) throw new Error({
+  // @ts-ignore
+  if(typeof value !== 'string') throw new Error({
     name : BAD_REQUEST,
     message : `${key} is expected to be of type String in ${table}, but we received ${value}`,
   });
 }
 
-function createJWT(id, jwtConfig = { algorithm: algoJWT, expiresIn: '2h'}) {
+/**
+ * Generate the jwt token
+ * @param {number | string} id The data to integrate to the token
+ * @param {import('jsonwebtoken').SignOptions} jwtConfig jwt options
+ * @returns {Promise<string>}
+ */
+function createJWT(id, jwtConfig = { algorithm: 'RS256', expiresIn: '2h'}) {
   return new Promise((resolve, reject) => {
     jwt.sign({id: id+''}, privateKey, jwtConfig, (err, token) => {
       if(err) reject(err);
@@ -65,7 +88,13 @@ function createJWT(id, jwtConfig = { algorithm: algoJWT, expiresIn: '2h'}) {
   });
 }
 
-function checkJWT(token, jwtConfig = { algorithm: algoJWT }) {
+/**
+ * Check the validity of the jwt token
+ * @param {string} token The token to check
+ * @param {import('jsonwebtoken').VerifyOptions} jwtConfig jwt options
+ * @returns {Promise<Object>} A promise that resolves to the decoded token
+ */
+function checkJWT(token, jwtConfig) {
   return new Promise((resolve, reject) => {
     jwt.verify(token, publicKey, jwtConfig, (err, decoded) => {
       if(err) reject(err);
@@ -74,6 +103,12 @@ function checkJWT(token, jwtConfig = { algorithm: algoJWT }) {
   });
 }
 
+/**
+ * Create the salted hash of the provided password
+ * @param {string} password The password to hash
+ * @param {string} salt The random salt
+ * @returns {Promise<Buffer>} The hash
+ */
 function createHash(password, salt) {
   return new Promise((resolve, reject) => {
     crypto.pbkdf2(password, salt || '', 1000, 64, 'sha512', (err, hash) => {
@@ -83,6 +118,12 @@ function createHash(password, salt) {
   });
 }
 
+/**
+ * Salt the password in the request if needed
+ * @param {import('../utils').Request} request The request to handle
+ * @param {string} password The password field
+ * @param {string=} salt The salt field name
+ */
 function processRequestPassword(request, userTable, password, salt) {
   // We will hash the pwd and add a salt string if required
   // creating a unique salt for a particular user
@@ -95,12 +136,22 @@ function processRequestPassword(request, userTable, password, salt) {
 }
 
 /**
+ * Login plugin configuration
+ * @typedef {Object} LoginConfig
+ * @property {string} userTable The table that will store the user's data
+ * @property {string} login The column that will store the user's login
+ * @property {string} password The column that will store the user's password
+ * @property {string=} salt The column that will store the random generated salt for the password (optional)
+ * @property {string=} firstname The column that will store the user firstname if we use google or facebook login (optional)
+ * @property {string=} lastname The column that will store the user lastname if we use google or facebook login (optional)
+ * @property {{ google?: string; facebook?: string}=} plugins The tokens for facebook or google logins (optional)
+ * @property {import('jsonwebtoken').VerifyOptions & import('jsonwebtoken').SignOptions=} jwtConfig The config for the jwt encryption (optional)
+ */
+
+/**
  * Manage login and user creation into the database
- * @param {string} userTable The table that will store the user's data
- * @param {string} login The column that will store the user's login
- * @param {string} password The column that will store the user's password
- * @param {string} salt The column that will store the random generated salt for the password (optional)
- * @param {Object} jwtConfig The config for the jwt encryption (optional)
+ * @param {LoginConfig} config The plugin configuration
+ * @returns {import('./').Plugin}
  */
 function createLoginPlugin(config) {
   check(loginModel, config);
@@ -115,26 +166,27 @@ function createLoginPlugin(config) {
       if(token) {
         //A request is being authenticated with a JWT token
         checkJWT(token, jwtConfig)
+          // TODO handle the possibility to use UUID instead of number for the reservedId
           .then(decoded => (res.locals.authId = Number.parseInt(decoded.id, 10)))
           .then(() => logger('login', `${userTable} ${res.locals.authId} is making a request.`))
           .then(() => next())
           .catch(error => {
             const status =
               error.name === 'JsonWebTokenError' ? 400 :
-              error.name === 'NotBeforeError' ? 425 :
-              error.name === 'TokenExpiredError' ? 401 :
-              401
+                error.name === 'NotBeforeError' ? 425 :
+                  error.name === 'TokenExpiredError' ? 401 :
+                    401;
             const message =
               error.message === 'jwt signature is required' ? 'This jwt error should not be happenning. Please report this.' :
-              error.message === 'invalid signature' ? 'There was an issue when reading the public.pem file. Please report this.' :
-              error.message
-            next({ ...error, message, status })
-          })
+                error.message === 'invalid signature' ? 'There was an issue when reading the public.pem file. Please report this.' :
+                  error.message;
+            next({ ...error, message, status });
+          });
       } else next();
     },
     preRequisite : (tables) => {
       //Validate data
-      const table = tables[userTable];
+      const table = /** @type {import('../utils').FormattedTableValue} */(tables[userTable]);
       if(!table) return Promise.reject(`The table ${userTable} is not defined and is needed for loggin`);
       try {
         checkType(login, table, 'string', 1, userTable);
@@ -268,7 +320,7 @@ function createLoginPlugin(config) {
     onCreation: {
       [userTable] : (createdObject, { local }) => {
         const reservedId = createdObject.reservedId;
-        //Once the user is created inside the database, we set the authId to treat each further command on his behalf
+        //Once the user is created inside the database, we set the authId to treat each further command on its behalf
         local.authId = reservedId;
         return createJWT(reservedId, jwtConfig)
           .then(jwt => {
@@ -289,7 +341,7 @@ function createLoginPlugin(config) {
             delete tokens[id];
           }
         });
-        return results;
+        return Promise.resolve(results);
       }
     }
   };
